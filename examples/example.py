@@ -6,11 +6,8 @@ This file can then for example be loaded into a Jupyter Notebook (check out
 example.ipynb).
 """
 from queue import Queue
-# Keep imports working although this file is iun subdir of the repo
-import sys, pathlib
-sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent))
-from xwrl6432_adc_reader.xwrl6432_adc_reader import XWRL6432AdcReader
-from xwrl6432_adc_reader.utils.adc_recorder import ADCRecorder
+from xwrl6432_adc_reader import XWRL6432AdcReader
+from xwrl6432_adc_reader.utils import ADCRecorder
 
 
 # Create the queue which the reader will write the ADC data into
