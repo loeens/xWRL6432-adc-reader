@@ -9,14 +9,14 @@ from pathlib import Path
 class ADCRecorder(threading.Thread):
     """
     A thread-based class to record a specified number of data frames
-    from an input queue.
+    from an input queue
 
-    It consumes frames from the queue, stores them, and stops once the 
-    target number of frames is reached or when explicitly stopped.
+    It consumes ADC frames from the queue, stores them, and stops once the 
+    target number of frames is reached or when intentionally stopped
     """
     def __init__(self, input_queue: Queue, num_frames: int):
         """
-        Initializes the ADCRecorder.
+        Initializes the ADCRecorder
 
         Args:
             input_queue: The queue from which frames are read. 
@@ -27,98 +27,94 @@ class ADCRecorder(threading.Thread):
         """
         super().__init__(daemon=True)
 
-        if not isinstance(num_frames, int) or num_frames < 0:
-            raise ValueError("num_frames must be a non-negative integer.")
+        if not isinstance(num_frames, int):
+            raise ValueError("num_frames must be an integer")
 
         self.input_queue = input_queue
         self.num_frames_to_record = num_frames
         
         self.recorded_frames = []
-        self._frames_recorded_count = 0
+        self._num_recorded_frames = 0
         self._running = False
         
-        # Event to signal completion of the recording task (all frames done or stopped)
-        self.recording_task_complete_event = threading.Event()
+        self.rec_complete_event = threading.Event()
 
     def run(self):
         """
-        Continuously read frames from the input_queue until the desired number
-        of frames is recorded or the recording is stopped via the _running flag.
+        Continuously read frames from the input_queue until the set number
+        of frames is recorded or the recording is stopped via _running flag
         """
         try:
-            while self._running and self._frames_recorded_count < self.num_frames_to_record:
+            while self._running and self._num_recorded_frames < self.num_frames_to_record:
                 try:
                     # Read frame from input_queue and add to recorded_frames[]
                     frame = self.input_queue.get(timeout = 5.0)
                     self.recorded_frames.append(frame)
-                    self._frames_recorded_count += 1
+                    self._num_recorded_frames += 1
                 except QueueEmpty:
                     print("Input Queue was empty for 5 seconds.")
                     raise
             
-            if self._frames_recorded_count == self.num_frames_to_record:
+            if self._num_recorded_frames == self.num_frames_to_record:
                 print(f"Successfully recorded all {self.num_frames_to_record} targeted frames.")
             elif not self._running:
-                print(f"Recording stopped externally. Recorded {self._frames_recorded_count} of {self.num_frames_to_record} targeted frames.")
+                print(f"Recording stopped externally. Recorded {self._num_recorded_frames} of {self.num_frames_to_record} targeted frames.")
 
         except Exception as e:
-            print(f"ADC Recorder: An error occurred during recording: {e}")
+            print(f"Error during recording: {e}")
         finally:
             self._running = False
-            self.recording_task_complete_event.set()
+            self.rec_complete_event.set()
 
     def start_recording(self) -> bool:
         """
-        Start the recording process
+        Starts the recording process
 
         Returns:
-            bool: True if the recording thread was started successfully
+            success (bool): True if the recording thread was started successfully
         """
         if self._running:
-            print("Cannot start: Recording thread is already active")
             return False
         
+        # Init vars
         self.recorded_frames = []
-        self._frames_recorded_count = 0
-        self.recording_task_complete_event.clear()
-        
+        self._num_recorded_frames = 0
+        self.rec_complete_event.clear()
         self._running = True
         
         try:
+            # Start run() loop
             super().start()
             return True
-        except RuntimeError as e:
+        except Exception as e:
             self._running = False
-            self.recording_task_complete_event.set()
-            print(f"Failed to start recording thread (RuntimeError: {e}). Is it already running?")
+            self.rec_complete_event.set()
+            print(f"Error during start of recording thread: {e}")
             return False
 
-    def stop_recording(self, wait_for_thread_join: bool = True, timeout: float = 2.0):
+    def stop_recording(self, timeout: float = 2.0):
         """
-        Signals the recording thread to stop its operation and optionally waits for it to join
+        Signals the recording thread to stop and and join
 
         Args:
-            wait_for_thread_join (bool): If True the method will block until the recording thread finishes or 
-                                            the timeout is reached
-            timeout (float):             Maximum time in seconds to wait for the thread to join if
-                                             wait_for_thread_join is True.
+            timeout (float):  Maximum number of seconds to wait for the thread to join
         """
-        print("Attempting to stop recording..")
         self._running = False
 
-        if wait_for_thread_join and self.is_alive():
+        # Join threads
+        if self.is_alive():
             self.join(timeout) 
             if self.is_alive():
-                print("Recording thread did not terminate within the specified timeout via join()")
+                print("Recording thread did not terminate within timeout!")
             else:
-                print("Recording thread joined successfully.")
+                print("Recording thread joined successfully")
 
     def get_recorded_frames(self) -> list:
         """
-        Return the list of frames that have been recorded
+        Returns the list of frames that have been recorded
 
         Returns:
-            list: A list containing the recorded frames.
+            list: containing the recorded frames
         """
         return self.recorded_frames
 
@@ -137,7 +133,7 @@ class ADCRecorder(threading.Thread):
             print("Error: No frames recorded to save")
             return False
         
-        if self._running and not self.recording_task_complete_event.is_set():
+        if self._running and not self.rec_complete_event.is_set():
              print("Warning: Saving data while recording is in progress!")
 
         try:
@@ -148,7 +144,7 @@ class ADCRecorder(threading.Thread):
 
             data_to_save = {
                 'adc_data': frames_array,
-                'num_frames_recorded_actual': np.array(self._frames_recorded_count),
+                'num_frames_recorded_actual': np.array(self._num_recorded_frames),
                 'num_frames_target_config': np.array(self.num_frames_to_record)
             }
 
@@ -158,17 +154,17 @@ class ADCRecorder(threading.Thread):
                 data_to_save['config_metadata'] = np.array(config_metadata, dtype=object)
             
             np.savez_compressed(file_path_str, **data_to_save)
-            print(f"Successfully saved {self._frames_recorded_count} frames to {file_path_str}")
+            print(f"Successfully saved {self._num_recorded_frames} frames to {file_path_str}")
             return True
         except Exception as e:
             print(f"Error saving data to NPZ file '{file_path}': {e}")
             return False
 
-    def get_frames_recorded_count(self) -> int:
+    def get_num_recorded_frames(self) -> int:
         """
         Returns the number of frames that have been successfully recorded
         """
-        return self._frames_recorded_count
+        return self._num_recorded_frames
 
     def is_active(self) -> bool:
         """
@@ -186,6 +182,8 @@ class ADCRecorder(threading.Thread):
             bool: True if the recording task completed within the timeout,
                   False if not
         """
-        if not self.is_alive() and self.recording_task_complete_event.is_set():
-            return True # Already completed
-        return self.recording_task_complete_event.wait(timeout)
+        # Check if the thread has already completed
+        if not self.is_alive() and self.rec_complete_event.is_set():
+            return True
+        # Else, wait until completion
+        return self.rec_complete_event.wait(timeout)
